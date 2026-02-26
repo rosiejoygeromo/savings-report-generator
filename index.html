@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tenkara Savings Report Generator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --green: #1EC97E; --green-light: #E8FBF1; --dark: #1A1A2E;
+    --grey: #6B7280; --light-bg: #F8F9FA; --card-border: #E5E7EB;
+    --red: #EF4444; --white: #FFFFFF;
+  }
+  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: var(--light-bg); color: var(--dark); min-height: 100vh; }
+
+  /* ── Header ── */
+  .app-header { background: var(--white); border-bottom: 1px solid var(--card-border); padding: 16px 32px; display: flex; align-items: center; gap: 12px; }
+  .app-header .logo { font-size: 22px; font-weight: 800; color: var(--dark); display: flex; align-items: center; gap: 8px; }
+  .app-header .logo span { color: var(--green); font-size: 28px; }
+  .app-header .subtitle { color: var(--grey); font-size: 13px; margin-left: 8px; }
+
+  .container { max-width: 920px; margin: 0 auto; padding: 40px 24px; }
+
+  /* ── Steps indicator ── */
+  .steps { display: flex; gap: 4px; margin-bottom: 32px; justify-content: center; }
+  .step { display: flex; align-items: center; gap: 8px; padding: 8px 18px; border-radius: 20px; font-size: 13px; font-weight: 600; color: var(--grey); background: var(--white); border: 1px solid var(--card-border); transition: all 0.2s; }
+  .step.active { background: var(--green); color: var(--white); border-color: var(--green); }
+  .step.done { background: var(--green-light); color: #059669; border-color: #A7F3D0; }
+  .step-num { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; background: rgba(0,0,0,0.08); }
+  .step.active .step-num { background: rgba(255,255,255,0.3); }
+  .step.done .step-num { background: #A7F3D0; }
+  .step-arrow { color: var(--card-border); font-size: 18px; display: flex; align-items: center; padding: 0 6px; }
+
+  /* ── Upload ── */
+  .upload-section { text-align: center; margin-bottom: 24px; }
+  .upload-section h1 { font-size: 28px; font-weight: 800; margin-bottom: 6px; }
+  .upload-section p { color: var(--grey); margin-bottom: 20px; font-size: 15px; }
+  .dropzone { border: 2px dashed var(--card-border); border-radius: 16px; padding: 50px 40px; background: var(--white); cursor: pointer; transition: all 0.2s; }
+  .dropzone:hover, .dropzone.dragover { border-color: var(--green); background: var(--green-light); }
+  .dropzone .icon { font-size: 44px; margin-bottom: 10px; }
+  .dropzone .label { font-size: 16px; font-weight: 600; }
+  .dropzone .hint { font-size: 13px; color: var(--grey); margin-top: 4px; }
+  .dropzone input[type="file"] { display: none; }
+
+  /* ── File info ── */
+  .file-info { display: none; align-items: center; gap: 10px; padding: 12px 16px; background: var(--white); border: 1px solid var(--card-border); border-radius: 10px; margin-bottom: 16px; }
+  .file-info.show { display: flex; }
+  .file-info .file-icon { font-size: 24px; }
+  .file-info .file-name { font-weight: 600; font-size: 14px; }
+  .file-info .file-size { font-size: 12px; color: var(--grey); }
+  .file-info .file-remove { margin-left: auto; background: none; border: none; font-size: 18px; cursor: pointer; color: var(--grey); padding: 4px 8px; border-radius: 6px; }
+  .file-info .file-remove:hover { background: #FEE2E2; color: var(--red); }
+
+  /* ── Form row ── */
+  .form-row { display: flex; gap: 12px; margin-bottom: 20px; align-items: end; flex-wrap: wrap; }
+  .form-row .field { flex: 1; min-width: 200px; }
+  .form-row label { font-size: 12px; font-weight: 600; color: var(--grey); display: block; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.3px; }
+  .form-row input, .form-row select { width: 100%; padding: 10px 14px; border: 1px solid var(--card-border); border-radius: 8px; font-size: 14px; font-family: inherit; outline: none; transition: border 0.2s; background: var(--white); }
+  .form-row input:focus, .form-row select:focus { border-color: var(--green); }
+
+  .btn { padding: 10px 24px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all 0.15s; }
+  .btn-green { background: var(--green); color: var(--white); }
+  .btn-green:hover { background: #17b06d; }
+  .btn-green:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-outline { background: var(--white); color: var(--dark); border: 1px solid var(--card-border); }
+  .btn-outline:hover { border-color: var(--green); color: var(--green); }
+
+  /* ── Status ── */
+  .status { text-align: center; padding: 14px; border-radius: 10px; margin-bottom: 20px; font-weight: 500; font-size: 14px; display: none; }
+  .status.info { display: block; background: #EFF6FF; color: #1D4ED8; }
+  .status.success { display: block; background: var(--green-light); color: #059669; }
+  .status.error { display: block; background: #FEF2F2; color: #DC2626; }
+
+  /* ── Column mapping ── */
+  .mapping-section { display: none; margin-bottom: 24px; }
+  .mapping-section.show { display: block; }
+  .mapping-section h3 { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .mapping-section .hint { font-size: 12px; color: var(--grey); margin-bottom: 14px; }
+  .mapping-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .mapping-grid .field label { font-size: 11px; }
+  .mapping-grid .field select { font-size: 13px; padding: 8px 10px; }
+
+  /* ── Preview ── */
+  .preview-section { display: none; margin-top: 28px; }
+  .preview-section.show { display: block; }
+  .preview-section h2 { font-size: 18px; font-weight: 700; margin-bottom: 14px; }
+  .material-cards { display: flex; flex-direction: column; gap: 14px; }
+  .material-card { background: var(--white); border: 1px solid var(--card-border); border-radius: 12px; overflow: hidden; }
+  .material-card .card-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; background: var(--light-bg); border-bottom: 1px solid var(--card-border); }
+  .material-card .card-header .mat-name { font-weight: 700; font-size: 13px; }
+  .savings-badge { display: inline-block; padding: 4px 14px; border-radius: 20px; font-size: 11px; font-weight: 700; color: var(--white); background: var(--green); white-space: nowrap; }
+  .card-body { display: grid; grid-template-columns: 1fr 1fr; }
+  .card-body .side { padding: 14px 16px; }
+  .card-body .side:first-child { border-right: 2px solid var(--green); }
+  .card-body .side .side-label { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .card-body .side .side-label.current { color: var(--grey); }
+  .card-body .side .side-label.alt { color: var(--green); }
+  .card-body .side .supplier { font-weight: 700; font-size: 12px; margin-bottom: 3px; }
+  .card-body .side .price { font-size: 20px; font-weight: 800; }
+  .card-body .side .price.current { color: var(--red); }
+  .card-body .side .price.alt { color: var(--green); }
+  .card-body .side .moq { font-size: 10px; color: var(--grey); margin-top: 3px; }
+  .card-body .side .grade { font-size: 10px; color: var(--grey); margin-top: 2px; }
+  .card-footer { padding: 7px 16px; background: var(--light-bg); border-top: 1px solid var(--card-border); font-size: 10px; color: var(--grey); }
+
+  .summary-bar { display: flex; justify-content: space-between; align-items: center; background: var(--white); border: 1px solid var(--card-border); border-radius: 12px; padding: 16px 22px; margin-top: 16px; }
+  .summary-bar .stat-label { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; margin-bottom: 3px; }
+  .summary-bar .stat-label.green { color: var(--green); }
+  .summary-bar .stat-label.grey { color: var(--grey); }
+  .summary-bar .stat-value { font-size: 22px; font-weight: 800; }
+
+  .download-row { text-align: center; margin-top: 24px; display: flex; justify-content: center; gap: 12px; }
+  .btn-download { padding: 14px 36px; font-size: 15px; background: var(--green); color: var(--white); border: none; border-radius: 10px; font-weight: 700; cursor: pointer; font-family: inherit; transition: all 0.15s; }
+  .btn-download:hover { background: #17b06d; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(30,201,126,0.3); }
+  .btn-reset { padding: 14px 28px; font-size: 15px; background: var(--white); color: var(--dark); border: 1px solid var(--card-border); border-radius: 10px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .btn-reset:hover { border-color: var(--red); color: var(--red); }
+
+  /* ── Detected columns chip ── */
+  .detected-info { display: none; padding: 12px 16px; background: var(--green-light); border-radius: 10px; margin-bottom: 16px; font-size: 13px; color: #059669; }
+  .detected-info.show { display: block; }
+  .detected-info strong { font-weight: 700; }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <div class="logo"><span>&infin;</span> Tenkara</div>
+  <div class="subtitle">Savings Report Generator</div>
+</header>
+
+<div class="container">
+
+  <!-- Steps -->
+  <div class="steps">
+    <div class="step active" id="step1"><span class="step-num">1</span> Upload</div>
+    <div class="step-arrow">&#8250;</div>
+    <div class="step" id="step2"><span class="step-num">2</span> Configure</div>
+    <div class="step-arrow">&#8250;</div>
+    <div class="step" id="step3"><span class="step-num">3</span> Download</div>
+  </div>
+
+  <!-- Upload -->
+  <div class="upload-section" id="uploadSection">
+    <h1>Generate Savings Report</h1>
+    <p>Drop any sourcing spreadsheet — works with any client, any materials</p>
+    <div class="dropzone" id="dropzone">
+      <div class="icon">&#128196;</div>
+      <div class="label">Drop your .xlsx file here, or click to browse</div>
+      <div class="hint">Supports .xlsx and .csv — any B&R sourcing spreadsheet</div>
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
+    </div>
+  </div>
+
+  <div class="file-info" id="fileInfo">
+    <div class="file-icon">&#128200;</div>
+    <div>
+      <div class="file-name" id="fileName"></div>
+      <div class="file-size" id="fileSize"></div>
+    </div>
+    <button class="file-remove" id="fileRemove" title="Remove file">&times;</button>
+  </div>
+
+  <!-- Auto-detected columns info -->
+  <div class="detected-info" id="detectedInfo"></div>
+
+  <!-- Column mapping (shown only if auto-detect fails) -->
+  <div class="mapping-section" id="mappingSection">
+    <h3>Map Your Columns</h3>
+    <div class="hint">We couldn't auto-detect all columns. Please map them below:</div>
+    <div class="mapping-grid" id="mappingGrid"></div>
+  </div>
+
+  <!-- Config -->
+  <div class="form-row">
+    <div class="field">
+      <label>Report Title</label>
+      <input type="text" id="reportTitle" placeholder="e.g. Acme Corp – Q1 Sourcing">
+    </div>
+    <button class="btn btn-green" id="generateBtn" disabled>Generate Report</button>
+  </div>
+
+  <div class="status" id="status"></div>
+
+  <!-- Preview -->
+  <div class="preview-section" id="previewSection">
+    <h2>Report Preview</h2>
+    <div class="material-cards" id="materialCards"></div>
+    <div class="summary-bar" id="summaryBar"></div>
+    <div class="download-row">
+      <button class="btn-download" id="downloadBtn">&#11015; Download PDF Report</button>
+      <button class="btn-reset" id="resetBtn">&#8635; New Report</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  UNIVERSAL COLUMN DETECTION
+// ═══════════════════════════════════════════════════════════════
+
+// Required fields and their likely column header patterns
+const FIELD_PATTERNS = {
+  material:      { label: "Material / Item Name",        patterns: ["material", "item", "ingredient", "product", "raw material", "component"] },
+  supplier:      { label: "Supplier",                    patterns: ["supplier", "vendor", "source", "company"] },
+  avg_price:     { label: "Current Price (per unit)",    patterns: ["average price", "current price", "client price", "existing price", "avg price", "your price"] },
+  price_per_unit:{ label: "Quote Price (per unit)",      patterns: ["price per unit", "unit price", "quoted price", "new price", "alternative price", "quote price"] },
+  unit:          { label: "Unit (e.g. per lb, per kg)",  patterns: ["unit", "price unit", "uom"] },
+  grade:         { label: "Grade / Specs",               patterns: ["grade", "specification", "spec", "quality"] },
+  purch_notes:   { label: "Purchasing Notes",            patterns: ["purchasing note", "purch note", "notes", "buyer note", "procurement note"] },
+  op_notes:      { label: "Operator Notes",              patterns: ["operator", "op note", "sourcing note"] },
+  case_weight:   { label: "Case / Pack Weight",          patterns: ["case weight", "pack weight", "package weight", "net weight"] },
+  case_unit:     { label: "Case Unit",                   patterns: ["case unit", "pack unit"] },
+  case_type:     { label: "Case Type",                   patterns: ["case type", "pack type", "container", "packaging"] },
+};
+
+const REQUIRED_FIELDS = ["material", "supplier", "avg_price", "price_per_unit"];
+
+function autoDetectColumns(headers) {
+  const mapping = {};
+  const lowerHeaders = headers.map(h => (h || "").toString().toLowerCase().trim());
+
+  for (const [field, { patterns }] of Object.entries(FIELD_PATTERNS)) {
+    let bestIdx = -1;
+    let bestScore = 0;
+
+    for (let i = 0; i < lowerHeaders.length; i++) {
+      const h = lowerHeaders[i];
+      for (const p of patterns) {
+        if (h === p && p.length > bestScore) {
+          bestIdx = i; bestScore = p.length;
+        } else if (h.includes(p) && p.length > bestScore) {
+          bestIdx = i; bestScore = p.length;
+        }
+      }
+    }
+    if (bestIdx >= 0) {
+      mapping[field] = headers[bestIdx];
+    }
+  }
+  return mapping;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  UNIVERSAL DATA PROCESSING
+// ═══════════════════════════════════════════════════════════════
+
+function parseSpreadsheet(workbook, colMap) {
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+  const materials = {};
+
+  for (const row of rows) {
+    const material = (row[colMap.material] || "").toString().trim();
+    if (!material) continue;
+
+    const ppu = parseFloat(row[colMap.price_per_unit]);
+    if (isNaN(ppu)) continue;
+
+    const entry = {
+      material,
+      supplier:       (row[colMap.supplier] || "").toString().trim(),
+      avg_price:      parseFloat(row[colMap.avg_price]) || 0,
+      price_per_unit: ppu,
+      unit:           colMap.unit ? (row[colMap.unit] || "per lb").toString().trim() : "per lb",
+      grade:          colMap.grade ? (row[colMap.grade] || "").toString().trim() : "",
+      purch_notes:    colMap.purch_notes ? (row[colMap.purch_notes] || "").toString().trim() : "",
+      op_notes:       colMap.op_notes ? (row[colMap.op_notes] || "").toString().trim() : "",
+      case_weight:    colMap.case_weight ? row[colMap.case_weight] : "",
+      case_unit:      colMap.case_unit ? (row[colMap.case_unit] || "").toString().trim() : "",
+      case_type:      colMap.case_type ? (row[colMap.case_type] || "").toString().trim() : "",
+    };
+
+    if (!materials[material]) materials[material] = [];
+    materials[material].push(entry);
+  }
+  return materials;
+}
+
+function findLowestPrices(materials) {
+  const results = [];
+  for (const [mat, entries] of Object.entries(materials)) {
+    const best = entries.reduce((a, b) => a.price_per_unit < b.price_per_unit ? a : b);
+    results.push({ ...best, displayName: mat });
+  }
+  results.sort((a, b) => {
+    const sa = a.avg_price > 0 ? ((a.avg_price - a.price_per_unit) / a.avg_price * 100) : -9999;
+    const sb = b.avg_price > 0 ? ((b.avg_price - b.price_per_unit) / b.avg_price * 100) : -9999;
+    return sb - sa;
+  });
+  return results;
+}
+
+function buildMOQ(entry) {
+  const pn = (entry.purch_notes || "").toString();
+  for (const line of pn.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.toUpperCase().startsWith("MOQ")) {
+      let cleaned = trimmed;
+      for (const prefix of ["MOQ:", "MOQ -", "MOQ"]) {
+        if (cleaned.toUpperCase().startsWith(prefix)) { cleaned = cleaned.slice(prefix.length).trim(); break; }
+      }
+      return cleaned;
+    }
+  }
+  if (entry.case_weight) {
+    let s = String(typeof entry.case_weight === 'number' && entry.case_weight % 1 === 0 ? entry.case_weight : entry.case_weight);
+    if (entry.case_unit) s += " " + entry.case_unit;
+    if (entry.case_type) s += " (" + entry.case_type + ")";
+    return s;
+  }
+  return "";
+}
+
+function buildGrade(entry) {
+  const pn = (entry.purch_notes || "").toString();
+  for (const line of pn.split("\n")) {
+    const t = line.trim();
+    if (!t || t.toUpperCase().startsWith("MOQ")) continue;
+    if (/grade|trade name|inci|assay/i.test(t) || t.startsWith("*")) return t;
+  }
+  return "";
+}
+
+function buildDealbreakers(entry) {
+  const grade = (entry.grade || "").toString();
+  const parts = [];
+  for (const seg of grade.split("\n")) {
+    let s = seg.trim();
+    if (!s) continue;
+    s = s.replace(/\|\s*Dealbreaker/gi, "").replace(/\|\s*Non-Dealbreaker/gi, "").trim();
+    if (s) parts.push(s);
+  }
+  return parts.join(", ");
+}
+
+function calcSavings(entry) {
+  return entry.avg_price > 0 ? ((entry.avg_price - entry.price_per_unit) / entry.avg_price) * 100 : 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  PDF GENERATION
+// ═══════════════════════════════════════════════════════════════
+
+function generatePDF(entries, reportTitle) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "pt", format: "letter" });
+  const W = 612, H = 792, M = 40, CW = W - 2 * M;
+  let y = 0;
+
+  const GREEN = [30,201,126], DARK = [26,26,46], GREY = [107,114,128],
+        RED = [239,68,68], LIGHT = [248,249,250], BORDER = [229,231,235], WHITE_C = [255,255,255];
+
+  function rr(x, ry, w, h, r, o={}) {
+    if (o.fill) { doc.setFillColor(...o.fill); doc.roundedRect(x, ry, w, h, r, r, "F"); }
+    if (o.stroke) { doc.setDrawColor(...o.stroke); doc.setLineWidth(o.lw||0.5); doc.roundedRect(x, ry, w, h, r, r, "S"); }
+  }
+  function np(needed) { if (y + needed > H - 40) { doc.addPage(); y = 40; } }
+
+  // Header
+  rr(M-10, 20, CW+20, 160, 10, {fill:LIGHT});
+  doc.setFont("helvetica","bold"); doc.setFontSize(16); doc.setTextColor(...DARK);
+  doc.text("\u221E  Tenkara", M+10, 60);
+  doc.setFont("helvetica","normal"); doc.setFontSize(11); doc.setTextColor(...GREY);
+  doc.text("Savings Report", M+10, 80);
+  doc.setFont("helvetica","bold"); doc.setFontSize(30); doc.setTextColor(...DARK);
+
+  // Word-wrap title if long
+  const titleLines = doc.splitTextToSize(reportTitle || "Savings Report", CW - 20);
+  let titleY = 118;
+  for (const tl of titleLines) { doc.text(tl, M+10, titleY); titleY += 34; }
+
+  const now = new Date();
+  const ds = `Date: ${String(now.getMonth()+1).padStart(2,'0')}.${String(now.getDate()).padStart(2,'0')}.${now.getFullYear()} ${now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true})}`;
+  doc.setFont("helvetica","normal"); doc.setFontSize(10); doc.setTextColor(...GREY);
+  doc.text(ds, M+10, Math.min(titleY + 4, 165));
+
+  y = 210;
+  const savingsAll = [];
+
+  for (const entry of entries) {
+    const dn = entry.displayName;
+    const cp = entry.avg_price || 0;
+    const ur = (entry.unit || "per lb").replace("per ", "");
+    const ap = entry.price_per_unit;
+    const sup = entry.supplier;
+    const moq = buildMOQ(entry);
+    const gs = buildGrade(entry);
+    const db = buildDealbreakers(entry);
+    const sav = calcSavings(entry);
+    savingsAll.push(sav);
+
+    doc.setFont("helvetica","bold"); doc.setFontSize(13);
+    const rmw = CW * 0.50;
+    const supLines = doc.splitTextToSize(sup, rmw);
+
+    let boxH = 115;
+    if (supLines.length > 1) boxH += 16 * (supLines.length - 1);
+    if (gs) boxH += 15;
+
+    doc.setFont("helvetica","normal"); doc.setFontSize(8);
+    const dbTxt = `Queries: {INCI, Trade Name}${db ? '    Dealbreakers: ' + db : ''}`;
+    const dbLn = doc.splitTextToSize(dbTxt, CW - 24);
+    const fH = 12 + dbLn.length * 10;
+    const totalH = 32 + 8 + boxH + 8 + fH + 18;
+    np(totalH);
+
+    const x = M;
+
+    // Header bar
+    rr(x, y, CW, 32, 5, {fill:LIGHT, stroke:BORDER});
+    doc.setFont("helvetica","bold"); doc.setFontSize(12); doc.setTextColor(...DARK);
+    const dnTrunc = doc.splitTextToSize(dn, CW - 170);
+    doc.text(dnTrunc[0], x+12, y+20);
+
+    // Badge
+    const bW = 130, bX = x+CW-bW-10;
+    rr(bX, y+3, bW, 26, 13, {fill:GREEN});
+    doc.setFont("helvetica","bold"); doc.setFontSize(11); doc.setTextColor(255,255,255);
+    doc.text((sav>=0?"":"-")+Math.abs(sav).toFixed(2)+"% Savings", bX+bW/2, y+20, {align:"center"});
+
+    // Price box
+    const bY = y + 40;
+    rr(x, bY, CW, boxH, 5, {fill:WHITE_C, stroke:BORDER, lw:0.75});
+    const mX = x + CW * 0.42;
+    doc.setDrawColor(...GREEN); doc.setLineWidth(2);
+    doc.line(mX, bY+15, mX, bY+boxH-15);
+
+    // Left
+    let cy = bY + 20;
+    doc.setFont("helvetica","bold"); doc.setFontSize(9); doc.setTextColor(...GREY);
+    doc.text("YOUR CURRENT SOURCE", x+18, cy);
+    cy += 30;
+    doc.setFont("helvetica","bold"); doc.setFontSize(24); doc.setTextColor(...RED);
+    doc.text(`$${cp.toFixed(2)}/${ur}`, x+18, cy);
+    cy += 18;
+    doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(...GREY);
+    doc.text("MOQ: N/A", x+18, cy);
+
+    // Right
+    const rX = mX + 20;
+    cy = bY + 20;
+    doc.setFont("helvetica","bold"); doc.setFontSize(9); doc.setTextColor(...GREEN);
+    doc.text("TENKARA ALTERNATIVE", rX, cy);
+    cy += 16;
+    doc.setFont("helvetica","bold"); doc.setFontSize(13); doc.setTextColor(...DARK);
+    for (const sl of supLines) { doc.text(sl, rX, cy); cy += 16; }
+    cy += 4;
+    doc.setFont("helvetica","bold"); doc.setFontSize(22); doc.setTextColor(...GREEN);
+    doc.text(`$${ap.toFixed(2)}/${ur}`, rX, cy);
+    cy += 16;
+    if (moq) { doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(...GREY); doc.text(`MOQ: ${moq}`, rX, cy); cy += 13; }
+    if (gs) { doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(...GREY); doc.text(doc.splitTextToSize(`*${gs}`, rmw), rX, cy); }
+
+    // Footer
+    const fY = bY + boxH + 8;
+    rr(x, fY, CW, fH, 4, {fill:LIGHT, stroke:BORDER, lw:0.5});
+    doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(...GREY);
+    doc.text(dbLn, x+12, fY+11);
+
+    y = fY + fH + 18;
+  }
+
+  // Summary
+  np(60);
+  rr(M, y, CW, 55, 6, {fill:LIGHT, stroke:BORDER});
+  const avg = savingsAll.length > 0 ? savingsAll.reduce((a,b)=>a+b,0)/savingsAll.length : 0;
+  doc.setFont("helvetica","bold"); doc.setFontSize(9); doc.setTextColor(...GREEN);
+  doc.text("AVERAGE SAVINGS", M+15, y+18);
+  doc.setFontSize(20); doc.setTextColor(...DARK);
+  doc.text(`${avg.toFixed(2)}%`, M+15, y+40);
+  doc.setFont("helvetica","bold"); doc.setFontSize(9); doc.setTextColor(...GREY);
+  doc.text("INGREDIENTS ANALYZED", M+CW-15, y+18, {align:"right"});
+  doc.setFontSize(20); doc.setTextColor(...DARK);
+  doc.text(String(entries.length), M+CW-15, y+40, {align:"right"});
+
+  return doc;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  UI
+// ═══════════════════════════════════════════════════════════════
+
+let loadedEntries = null, loadedWorkbook = null, columnMapping = {};
+
+const dropzone = document.getElementById("dropzone");
+const fileInput = document.getElementById("fileInput");
+const fileInfo = document.getElementById("fileInfo");
+const fileNameEl = document.getElementById("fileName");
+const fileSizeEl = document.getElementById("fileSize");
+const fileRemove = document.getElementById("fileRemove");
+const generateBtn = document.getElementById("generateBtn");
+const downloadBtn = document.getElementById("downloadBtn");
+const resetBtn = document.getElementById("resetBtn");
+const titleInput = document.getElementById("reportTitle");
+const statusEl = document.getElementById("status");
+const previewSection = document.getElementById("previewSection");
+const materialCards = document.getElementById("materialCards");
+const summaryBar = document.getElementById("summaryBar");
+const detectedInfo = document.getElementById("detectedInfo");
+const mappingSection = document.getElementById("mappingSection");
+const mappingGrid = document.getElementById("mappingGrid");
+const step1 = document.getElementById("step1");
+const step2 = document.getElementById("step2");
+const step3 = document.getElementById("step3");
+
+function setStep(n) {
+  [step1,step2,step3].forEach((s,i) => {
+    s.className = "step" + (i+1 === n ? " active" : i+1 < n ? " done" : "");
+  });
+}
+
+dropzone.addEventListener("click", () => fileInput.click());
+dropzone.addEventListener("dragover", e => { e.preventDefault(); dropzone.classList.add("dragover"); });
+dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
+dropzone.addEventListener("drop", e => { e.preventDefault(); dropzone.classList.remove("dragover"); if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener("change", () => { if (fileInput.files.length) handleFile(fileInput.files[0]); });
+fileRemove.addEventListener("click", resetFile);
+generateBtn.addEventListener("click", processAndPreview);
+downloadBtn.addEventListener("click", downloadPDF);
+resetBtn.addEventListener("click", resetFile);
+
+function handleFile(file) {
+  const ext = file.name.split(".").pop().toLowerCase();
+  if (!["xlsx","xls","csv"].includes(ext)) { showStatus("Please upload an .xlsx, .xls, or .csv file","error"); return; }
+  fileNameEl.textContent = file.name;
+  fileSizeEl.textContent = (file.size/1024).toFixed(1)+" KB";
+  fileInfo.classList.add("show");
+  dropzone.style.display = "none";
+
+  if (!titleInput.value) titleInput.value = file.name.replace(/\.[^.]+$/, "");
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = new Uint8Array(e.target.result);
+      loadedWorkbook = XLSX.read(data, { type: "array" });
+
+      // Auto-detect columns
+      const sheet = loadedWorkbook.Sheets[loadedWorkbook.SheetNames[0]];
+      const allRows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+      if (allRows.length === 0) { showStatus("Spreadsheet appears empty.","error"); return; }
+
+      const headers = Object.keys(allRows[0]);
+      columnMapping = autoDetectColumns(headers);
+
+      // Check required fields
+      const missing = REQUIRED_FIELDS.filter(f => !columnMapping[f]);
+
+      if (missing.length === 0) {
+        const detected = Object.entries(columnMapping).map(([k,v]) => `${FIELD_PATTERNS[k].label} → "${v}"`);
+        detectedInfo.innerHTML = `<strong>Auto-detected ${Object.keys(columnMapping).length} columns</strong> from ${allRows.length} rows. Ready to generate!`;
+        detectedInfo.classList.add("show");
+        mappingSection.classList.remove("show");
+        generateBtn.disabled = false;
+        setStep(2);
+        showStatus("","");
+      } else {
+        // Show mapping UI for missing fields
+        showMappingUI(headers, missing);
+        setStep(2);
+      }
+    } catch (err) { showStatus("Error reading file: "+err.message,"error"); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function showMappingUI(headers, missingFields) {
+  mappingGrid.innerHTML = "";
+  const allFields = [...missingFields, ...Object.keys(FIELD_PATTERNS).filter(f => !REQUIRED_FIELDS.includes(f) && !columnMapping[f])];
+
+  for (const field of allFields) {
+    const div = document.createElement("div");
+    div.className = "field";
+    const isRequired = REQUIRED_FIELDS.includes(field);
+    div.innerHTML = `
+      <label>${FIELD_PATTERNS[field].label}${isRequired ? ' *' : ''}</label>
+      <select data-field="${field}">
+        <option value="">-- Select column --</option>
+        ${headers.map(h => `<option value="${h}">${h}</option>`).join("")}
+      </select>
+    `;
+    mappingGrid.appendChild(div);
+    div.querySelector("select").addEventListener("change", e => {
+      if (e.target.value) columnMapping[field] = e.target.value;
+      else delete columnMapping[field];
+      const stillMissing = REQUIRED_FIELDS.filter(f => !columnMapping[f]);
+      generateBtn.disabled = stillMissing.length > 0;
+      if (stillMissing.length > 0) showStatus(`Still need: ${stillMissing.map(f=>FIELD_PATTERNS[f].label).join(", ")}`,"info");
+      else { statusEl.style.display = "none"; }
+    });
+  }
+  mappingSection.classList.add("show");
+  detectedInfo.classList.remove("show");
+  generateBtn.disabled = missingFields.length > 0;
+  if (missingFields.length > 0) showStatus(`Please map required columns: ${missingFields.map(f=>FIELD_PATTERNS[f].label).join(", ")}`,"info");
+}
+
+function resetFile() {
+  fileInfo.classList.remove("show");
+  dropzone.style.display = "";
+  fileInput.value = "";
+  generateBtn.disabled = true;
+  loadedWorkbook = null; loadedEntries = null; columnMapping = {};
+  previewSection.classList.remove("show");
+  detectedInfo.classList.remove("show");
+  mappingSection.classList.remove("show");
+  statusEl.style.display = "none";
+  titleInput.value = "";
+  setStep(1);
+}
+
+function showStatus(msg, type) {
+  if (!msg) { statusEl.style.display = "none"; return; }
+  statusEl.textContent = msg; statusEl.className = "status " + type;
+}
+
+function processAndPreview() {
+  if (!loadedWorkbook) return;
+  try {
+    const materials = parseSpreadsheet(loadedWorkbook, columnMapping);
+    loadedEntries = findLowestPrices(materials);
+    if (loadedEntries.length === 0) { showStatus("No valid data found. Check your column mapping.","error"); return; }
+    renderPreview(loadedEntries);
+    showStatus(`Found ${loadedEntries.length} materials with lowest prices!`,"success");
+    setStep(3);
+  } catch (err) { showStatus("Error: "+err.message,"error"); console.error(err); }
+}
+
+function renderPreview(entries) {
+  materialCards.innerHTML = "";
+  const savList = [];
+  for (const entry of entries) {
+    const sav = calcSavings(entry); savList.push(sav);
+    const ur = (entry.unit||"per lb").replace("per ","");
+    const moq = buildMOQ(entry), gs = buildGrade(entry), db = buildDealbreakers(entry);
+    const card = document.createElement("div");
+    card.className = "material-card";
+    card.innerHTML = `
+      <div class="card-header">
+        <span class="mat-name">${entry.displayName}</span>
+        <span class="savings-badge">${sav>=0?'':'-'}${Math.abs(sav).toFixed(2)}% Savings</span>
+      </div>
+      <div class="card-body">
+        <div class="side">
+          <div class="side-label current">YOUR CURRENT SOURCE</div>
+          <div class="price current">$${(entry.avg_price||0).toFixed(2)}/${ur}</div>
+          <div class="moq">MOQ: N/A</div>
+        </div>
+        <div class="side">
+          <div class="side-label alt">TENKARA ALTERNATIVE</div>
+          <div class="supplier">${entry.supplier}</div>
+          <div class="price alt">$${entry.price_per_unit.toFixed(2)}/${ur}</div>
+          <div class="moq">${moq?'MOQ: '+moq:''}</div>
+          ${gs?'<div class="grade">*'+gs+'</div>':''}
+        </div>
+      </div>
+      <div class="card-footer">Queries: {INCI, Trade Name}${db?'&nbsp;&nbsp;&nbsp;Dealbreakers: '+db:''}</div>`;
+    materialCards.appendChild(card);
+  }
+  const avg = savList.length>0 ? savList.reduce((a,b)=>a+b,0)/savList.length : 0;
+  summaryBar.innerHTML = `
+    <div><div class="stat-label green">AVERAGE SAVINGS</div><div class="stat-value">${avg.toFixed(2)}%</div></div>
+    <div style="text-align:right"><div class="stat-label grey">INGREDIENTS ANALYZED</div><div class="stat-value">${entries.length}</div></div>`;
+  previewSection.classList.add("show");
+}
+
+function downloadPDF() {
+  if (!loadedEntries) return;
+  const title = titleInput.value || "Savings Report";
+  const doc = generatePDF(loadedEntries, title);
+  doc.save(title.replace(/[^a-zA-Z0-9 &-]/g,"") + " - Savings Report.pdf");
+}
+</script>
+</body>
+</html>
